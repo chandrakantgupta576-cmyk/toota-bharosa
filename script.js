@@ -1,179 +1,247 @@
-// =========================================================
-// TOOTA BHAROSA — script.js
-// Vanilla JS only: smooth scroll, share, comments, replies
-// =========================================================
+// Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyCE2-zZlc4aVNTp9RNCNlarHIqx3t9Zk",
+  authDomain: "toota-bharosa-ccb28.firebaseapp.com",
+  projectId: "toota-bharosa-ccb28",
+  storageBucket: "toota-bharosa-ccb28.firebasestorage.app",
+  messagingSenderId: "371759431273",
+  appId: "1:371759431273:web:23542cee1056423fbecf8"
+};
 
-document.addEventListener('DOMContentLoaded', () => {
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
-  /* ---------- Smooth scrolling for in-page links ---------- */
-  document.querySelectorAll('a[href^="#"]').forEach(link => {
-    link.addEventListener('click', (e) => {
-      const targetId = link.getAttribute('href');
-      const target = document.querySelector(targetId);
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
-  });
 
-  /* ---------- Share button ---------- */
-  const shareBtn = document.getElementById('shareBtn');
-  const shareFeedback = document.getElementById('shareFeedback');
+// ===============================
+// SMOOTH SCROLL
+// ===============================
 
-  if (shareBtn) {
-    shareBtn.addEventListener('click', async () => {
-      const shareData = {
-        title: document.title,
-        text: 'Jab Bharosa Tootta Hai — a journal on trust, pain and self-respect.',
-        url: window.location.href
-      };
+document.querySelectorAll('a[href^="#"]').forEach(link => {
+  link.addEventListener("click", function (e) {
+    const target = document.querySelector(this.getAttribute("href"));
 
-      // Prefer the native Web Share API on supporting devices (mostly mobile)
-      if (navigator.share) {
-        try {
-          await navigator.share(shareData);
-        } catch (err) {
-          // user cancelled the share sheet — no error needed
-        }
-        return;
-      }
-
-      // Desktop fallback: copy the link to the clipboard
-      try {
-        await navigator.clipboard.writeText(shareData.url);
-        showShareFeedback('Link copied to clipboard.');
-      } catch (err) {
-        // last-resort fallback if clipboard API is unavailable
-        window.prompt('Copy this link:', shareData.url);
-      }
-    });
-  }
-
-  function showShareFeedback(message) {
-    if (!shareFeedback) return;
-    shareFeedback.textContent = message;
-    setTimeout(() => { shareFeedback.textContent = ''; }, 3000);
-  }
-
-  /* ---------- View web version (placeholder for a Blogger-style link) ---------- */
-  const webVersionLink = document.getElementById('webVersionLink');
-  if (webVersionLink) {
-    webVersionLink.addEventListener('click', (e) => {
+    if (target) {
       e.preventDefault();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  }
+      target.scrollIntoView({
+        behavior: "smooth"
+      });
+    }
+  });
+});
 
-  /* ---------- Reply button interaction (existing comments) ---------- */
-  document.querySelectorAll('.reply-link').forEach(btn => {
-    btn.addEventListener('click', () => toggleReplyBox(btn));
+
+// ===============================
+// COMMENTS
+// ===============================
+
+const commentForm = document.getElementById("commentForm");
+const commentList = document.getElementById("commentList");
+
+
+// Load comments
+async function loadComments() {
+  if (!commentList) return;
+
+  commentList.innerHTML = "";
+
+  try {
+    const snapshot = await db
+      .collection("comments")
+      .orderBy("createdAt", "asc")
+      .get();
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+
+      // Sirf main comments
+      if (!data.parentId) {
+        const comment = createComment(
+          doc.id,
+          data.name,
+          data.text
+        );
+
+        commentList.appendChild(comment);
+        loadReplies(doc.id, comment);
+      }
+    });
+
+  } catch (error) {
+    console.error("Comments load error:", error);
+  }
+}
+
+
+// Create comment
+function createComment(id, name, text) {
+
+  const li = document.createElement("li");
+  li.className = "comment-item";
+
+  const div = document.createElement("div");
+  div.className = "comment-content";
+
+  const nameElement = document.createElement("strong");
+  nameElement.textContent = name;
+
+  const textElement = document.createElement("p");
+  textElement.textContent = text;
+
+  const replyButton = document.createElement("button");
+  replyButton.textContent = "Reply";
+  replyButton.className = "reply-btn";
+
+  const replyBox = document.createElement("div");
+  replyBox.className = "reply-box";
+  replyBox.style.display = "none";
+
+  replyBox.innerHTML = `
+    <input type="text" placeholder="Your name" class="reply-name">
+    <textarea placeholder="Write a reply..." class="reply-text"></textarea>
+    <button class="post-reply">Post Reply</button>
+  `;
+
+  replyButton.addEventListener("click", () => {
+    replyBox.style.display =
+      replyBox.style.display === "none" ? "block" : "none";
   });
 
-  function toggleReplyBox(triggerBtn) {
-    const commentBody = triggerBtn.closest('.comment__body');
-    const existingBox = Array.from(commentBody.children).find(child => child.classList && child.classList.contains('reply-box'));
 
-    if (existingBox) {
-      existingBox.remove();
+  const postReply = replyBox.querySelector(".post-reply");
+
+  postReply.addEventListener("click", async () => {
+
+    const replyName =
+      replyBox.querySelector(".reply-name").value.trim();
+
+    const replyText =
+      replyBox.querySelector(".reply-text").value.trim();
+
+    if (!replyName || !replyText) {
+      alert("Please enter your name and reply.");
       return;
     }
 
-    // close any other open reply boxes for a cleaner mobile experience
-    document.querySelectorAll('.reply-box').forEach(box => box.remove());
+    try {
 
-    const box = document.createElement('div');
-    box.className = 'reply-box';
-    box.innerHTML = `
-      <textarea placeholder="Write a reply..." aria-label="Write a reply"></textarea>
-      <div class="reply-box__actions">
-        <button type="button" class="reply-submit">Reply</button>
-        <button type="button" class="reply-cancel">Cancel</button>
-      </div>
-    `;
-
-    commentBody.appendChild(box);
-    box.querySelector('textarea').focus();
-
-    box.querySelector('.reply-cancel').addEventListener('click', () => box.remove());
-
-    box.querySelector('.reply-submit').addEventListener('click', () => {
-      const textarea = box.querySelector('textarea');
-      const text = textarea.value.trim();
-      if (!text) {
-        textarea.focus();
-        return;
-      }
-
-      let nestedList = Array.from(commentBody.children).find(child => child.classList && child.classList.contains('comment-list--nested'));
-      if (!nestedList) {
-        nestedList = document.createElement('ul');
-        nestedList.className = 'comment-list comment-list--nested';
-        commentBody.appendChild(nestedList);
-      }
-
-      nestedList.appendChild(buildCommentEl('Anonymous', text));
-      box.remove();
-    });
-  }
-
-  /* ---------- Comment form ---------- */
-  const commentForm = document.getElementById('commentForm');
-  const commentList = document.getElementById('commentList');
-  const commentNameInput = document.getElementById('commentName');
-  const commentTextInput = document.getElementById('commentText');
-
-  if (commentForm) {
-    commentForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const text = commentTextInput.value.trim();
-      if (!text) {
-        commentTextInput.focus();
-        return;
-      }
-
-      const name = commentNameInput.value.trim() || 'Anonymous';
-      const newComment = buildCommentEl(name, text);
-      commentList.appendChild(newComment);
-
-      // attach reply behaviour to the freshly created comment
-      newComment.querySelector('.reply-link').addEventListener('click', function () {
-        toggleReplyBox(this);
+      await db.collection("comments").add({
+        name: replyName,
+        text: replyText,
+        parentId: id,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
 
-      commentForm.reset();
-      newComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alert("Reply posted!");
+
+      replyBox.querySelector(".reply-name").value = "";
+      replyBox.querySelector(".reply-text").value = "";
+
+      loadComments();
+
+    } catch (error) {
+      console.error(error);
+      alert("Reply post nahi ho paya.");
+    }
+
+  });
+
+
+  div.appendChild(nameElement);
+  div.appendChild(textElement);
+  div.appendChild(replyButton);
+  div.appendChild(replyBox);
+
+  li.appendChild(div);
+
+  return li;
+}
+
+
+// Load replies
+async function loadReplies(parentId, parentElement) {
+
+  try {
+
+    const snapshot = await db
+      .collection("comments")
+      .where("parentId", "==", parentId)
+      .orderBy("createdAt", "asc")
+      .get();
+
+    snapshot.forEach(doc => {
+
+      const data = doc.data();
+
+      const reply = document.createElement("li");
+      reply.className = "comment-reply";
+
+      const name = document.createElement("strong");
+      name.textContent = data.name;
+
+      const text = document.createElement("p");
+      text.textContent = data.text;
+
+      reply.appendChild(name);
+      reply.appendChild(text);
+
+      parentElement.appendChild(reply);
+
     });
+
+  } catch (error) {
+    console.error("Reply load error:", error);
   }
+}
 
-  function buildCommentEl(name, text) {
-    const li = document.createElement('li');
-    li.className = 'comment';
 
-    const initial = name.trim().charAt(0).toUpperCase() || 'A';
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+// Submit main comment
+if (commentForm) {
 
-    li.innerHTML = `
-      <div class="comment__avatar" aria-hidden="true">${initial}</div>
-      <div class="comment__body">
-        <p class="comment__meta"><span class="comment__name">${escapeHtml(name)}</span> <span class="comment__date">${dateStr} at ${timeStr}</span></p>
-        <p class="comment__text"></p>
-        <button type="button" class="reply-link">Reply</button>
-      </div>
-    `;
+  commentForm.addEventListener("submit", async function (e) {
 
-    // set text via textContent to avoid HTML injection from user input
-    li.querySelector('.comment__text').textContent = text;
+    e.preventDefault();
 
-    return li;
-  }
+    const name =
+      document.getElementById("commentName").value.trim();
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
+    const text =
+      document.getElementById("commentText").value.trim();
 
-});
+    if (!name || !text) {
+      alert("Please enter your name and comment.");
+      return;
+    }
+
+    try {
+
+      await db.collection("comments").add({
+
+        name: name,
+        text: text,
+        parentId: null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+
+      });
+
+      alert("Comment posted successfully!");
+
+      document.getElementById("commentName").value = "";
+      document.getElementById("commentText").value = "";
+
+      loadComments();
+
+    } catch (error) {
+
+      console.error("Comment error:", error);
+
+      alert("Comment save nahi ho paya. Firebase settings check karein.");
+
+    }
+
+  });
+
+}
+
+
+// Page load hote hi comments load
+loadComments();
