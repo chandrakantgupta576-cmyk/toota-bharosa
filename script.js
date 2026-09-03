@@ -22,14 +22,7 @@ const db = firebase.firestore();
 // SHARE BUTTON
 // ===============================
 
-const shareBtn = document.getElementById("shareBtn");
-const shareFeedback = document.getElementById("shareFeedback");
 
-if (shareBtn) {
-  shareBtn.addEventListener("click", async () => {
-    // ...
-  });
-}
 
 
 // ===============================
