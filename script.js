@@ -36,18 +36,84 @@ if (shareBtn) {
 // SMOOTH SCROLL
 // ===============================
 
-document.querySelectorAll('a[href^="#"]').forEach(link => {
-  link.addEventListener("click", function (e) {
-    const target = document.querySelector(this.getAttribute("href"));
+const shareBtn = document.getElementById("shareBtn");
+const shareFeedback = document.getElementById("shareFeedback");
 
-    if (target) {
-      e.preventDefault();
-      target.scrollIntoView({
-        behavior: "smooth"
-      });
+if (shareBtn) {
+  shareBtn.addEventListener("click", async () => {
+
+    const url = window.location.href;
+    const title = document.title;
+    const text = "Jab Bharosa Tootta Hai — a journal on trust, pain and self-respect.";
+
+    // Mobile share
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: title,
+          text: text,
+          url: url
+        });
+        return;
+      } catch (error) {
+        console.log("Share cancelled");
+      }
+    }
+
+    // Desktop share options
+    const choice = prompt(
+      "Share this website:\n\n" +
+      "1 = WhatsApp\n" +
+      "2 = Telegram\n" +
+      "3 = Facebook\n" +
+      "4 = Copy Link\n\n" +
+      "Enter 1, 2, 3 or 4:"
+    );
+
+    if (choice === "1") {
+      window.open(
+        "https://wa.me/?text=" +
+        encodeURIComponent(text + "\n\n" + url),
+        "_blank"
+      );
+    }
+
+    if (choice === "2") {
+      window.open(
+        "https://t.me/share/url?url=" +
+        encodeURIComponent(url) +
+        "&text=" +
+        encodeURIComponent(text),
+        "_blank"
+      );
+    }
+
+    if (choice === "3") {
+      window.open(
+        "https://www.facebook.com/sharer/sharer.php?u=" +
+        encodeURIComponent(url),
+        "_blank"
+      );
+    }
+
+    if (choice === "4") {
+      try {
+        await navigator.clipboard.writeText(url);
+
+        if (shareFeedback) {
+          shareFeedback.textContent = "Link copied!";
+
+          setTimeout(() => {
+            shareFeedback.textContent = "";
+          }, 3000);
+        }
+
+      } catch (error) {
+        prompt("Copy this link:", url);
+      }
     }
   });
-});
+}
 
 
 // ===============================
