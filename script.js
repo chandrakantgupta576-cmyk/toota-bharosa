@@ -1,326 +1,697 @@
-// Firebase
-const firebaseConfig = {
-  apiKey: "AIzaSyCE2-zZlc4aVNTp9RNCNlarHIqx3t9Zk",
-  authDomain: "toota-bharosa-ccb28.firebaseapp.com",
-  projectId: "toota-bharosa-ccb28",
-  storageBucket: "toota-bharosa-ccb28.firebasestorage.app",
-  messagingSenderId: "371759431273",
-  appId: "1:371759431273:web:23542cee1056423fbecf8"
-};
+// =========================================================
+// TOOTA BHAROSA — Firebase Comments + Share
+// =========================================================
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const firebaseConfig = {
-  // aapka Firebase config
-};
+document.addEventListener("DOMContentLoaded", async () => {
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+  // ---------------------------------------------------------
+  // FIREBASE CONFIG
+  // ---------------------------------------------------------
+  const firebaseConfig = {
+    apiKey: "AIzaSyCE2-zZlc4aVNTp9RNCNlrHRIqx3t9Zk",
+    authDomain: "toota-bharosa-ccb28.firebaseapp.com",
+    projectId: "toota-bharosa-ccb28",
+    storageBucket: "toota-bharosa-ccb28.firebasestorage.app",
+    messagingSenderId: "371759431273",
+    appId: "1:371759431273:web:23542cee1056423fbecf8"
+  };
 
+  // ---------------------------------------------------------
+  // FIREBASE CHECK
+  // ---------------------------------------------------------
+  if (!window.firebase) {
+    console.error("Firebase SDK load nahi hua.");
+    alert("Firebase load nahi hua. Page ko refresh karke dobara try karo.");
+    return;
+  }
 
-// ===============================
-// SHARE BUTTON
-// ===============================
+  // Firebase initialize
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
 
+  const db = firebase.firestore();
 
+  // ---------------------------------------------------------
+  // HTML ELEMENTS
+  // ---------------------------------------------------------
+  const commentForm = document.getElementById("commentForm");
+  const commentList = document.getElementById("commentList");
+  const commentNameInput = document.getElementById("commentName");
+  const commentTextInput = document.getElementById("commentText");
 
+  // ---------------------------------------------------------
+  // LOAD COMMENTS
+  // ---------------------------------------------------------
+  async function loadComments() {
 
-// ===============================
-// SMOOTH SCROLL
-// ===============================
-
-const shareBtn = document.getElementById("shareBtn");
-const shareFeedback = document.getElementById("shareFeedback");
-
-if (shareBtn) {
-  shareBtn.addEventListener("click", async () => {
-
-    const url = window.location.href;
-    const title = document.title;
-    const text = "Jab Bharosa Tootta Hai — a journal on trust, pain and self-respect.";
-
-    // Mobile share
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: title,
-          text: text,
-          url: url
-        });
-        return;
-      } catch (error) {
-        console.log("Share cancelled");
-      }
+    if (!commentList) {
+      console.error("commentList nahi mila.");
+      return;
     }
 
-    // Desktop share options
-    const choice = prompt(
-      "Share this website:\n\n" +
-      "1 = WhatsApp\n" +
-      "2 = Telegram\n" +
-      "3 = Facebook\n" +
-      "4 = Copy Link\n\n" +
-      "Enter 1, 2, 3 or 4:"
-    );
+    try {
 
-    if (choice === "1") {
-      window.open(
-        "https://wa.me/?text=" +
-        encodeURIComponent(text + "\n\n" + url),
-        "_blank"
-      );
-    }
+      // Purane Firebase comments clear karo
+      commentList.innerHTML = "";
 
-    if (choice === "2") {
-      window.open(
-        "https://t.me/share/url?url=" +
-        encodeURIComponent(url) +
-        "&text=" +
-        encodeURIComponent(text),
-        "_blank"
-      );
-    }
+      const snapshot = await db
+        .collection("comments")
+        .orderBy("createdAt", "asc")
+        .get();
 
-    if (choice === "3") {
-      window.open(
-        "https://www.facebook.com/sharer/sharer.php?u=" +
-        encodeURIComponent(url),
-        "_blank"
-      );
-    }
+      snapshot.forEach((doc) => {
 
-    if (choice === "4") {
-      try {
-        await navigator.clipboard.writeText(url);
+        const data = doc.data();
 
-        if (shareFeedback) {
-          shareFeedback.textContent = "Link copied!";
+        // Sirf main comments
+        if (!data.parentId) {
 
-          setTimeout(() => {
-            shareFeedback.textContent = "";
-          }, 3000);
+          const commentElement = buildCommentEl(
+            data.name || "Anonymous",
+            data.text || "",
+            data.createdAt,
+            doc.id
+          );
+
+          commentList.appendChild(commentElement);
+
+          // Replies load karo
+          loadReplies(doc.id, commentElement);
         }
 
-      } catch (error) {
-        prompt("Copy this link:", url);
+      });
+
+    } catch (error) {
+
+      console.error("Comments load nahi hue:", error);
+
+      // Agar index issue ho
+      if (error.code === "failed-precondition") {
+        console.error(
+          "Firestore index required. Firebase Console me index create karo."
+        );
       }
     }
-  });
-}
+  }
 
+  // ---------------------------------------------------------
+  // LOAD REPLIES
+  // ---------------------------------------------------------
+  async function loadReplies(parentId, parentElement) {
 
-// ===============================
-// COMMENTS
-// ===============================
+    try {
 
-const commentForm = document.getElementById("commentForm");
-const commentList = document.getElementById("commentList");
+      const snapshot = await db
+        .collection("comments")
+        .where("parentId", "==", parentId)
+        .orderBy("createdAt", "asc")
+        .get();
 
+      if (snapshot.empty) {
+        return;
+      }
 
-// Load comments
-async function loadComments() {
-  if (!commentList) return;
+      const commentBody =
+        parentElement.querySelector(".comment__body");
 
-  commentList.innerHTML = "";
+      if (!commentBody) {
+        return;
+      }
 
-  try {
-    const snapshot = await db
-      .collection("comments")
-      .orderBy("createdAt", "asc")
-      .get();
+      let nestedList =
+        commentBody.querySelector(".comment-list--nested");
 
-    snapshot.forEach(doc => {
-      const data = doc.data();
+      if (!nestedList) {
 
-      // Sirf main comments
-      if (!data.parentId) {
-        const comment = createComment(
-          doc.id,
-          data.name,
-          data.text
+        nestedList = document.createElement("ul");
+
+        nestedList.className =
+          "comment-list comment-list--nested";
+
+        commentBody.appendChild(nestedList);
+      }
+
+      snapshot.forEach((doc) => {
+
+        const data = doc.data();
+
+        const replyElement = buildCommentEl(
+          data.name || "Anonymous",
+          data.text || "",
+          data.createdAt,
+          doc.id
         );
 
-        commentList.appendChild(comment);
-        loadReplies(doc.id, comment);
+        nestedList.appendChild(replyElement);
+
+        // Nested replies
+        loadReplies(doc.id, replyElement);
+      });
+
+    } catch (error) {
+
+      console.error("Replies load nahi hui:", error);
+
+    }
+  }
+
+  // ---------------------------------------------------------
+  // ADD NEW COMMENT
+  // ---------------------------------------------------------
+  if (commentForm) {
+
+    commentForm.addEventListener("submit", async (e) => {
+
+      e.preventDefault();
+
+      const text =
+        commentTextInput
+          ? commentTextInput.value.trim()
+          : "";
+
+      if (!text) {
+
+        if (commentTextInput) {
+          commentTextInput.focus();
+        }
+
+        return;
       }
-    });
 
-  } catch (error) {
-    console.error("Comments load error:", error);
-  }
-}
+      const name =
+        commentNameInput
+          ? commentNameInput.value.trim() || "Anonymous"
+          : "Anonymous";
 
+      const publishButton =
+        commentForm.querySelector(
+          "button[type='submit']"
+        );
 
-// Create comment
-function createComment(id, name, text) {
+      if (publishButton) {
+        publishButton.disabled = true;
+        publishButton.textContent = "Publishing...";
+      }
 
-  const li = document.createElement("li");
-  li.className = "comment-item";
+      try {
 
-  const div = document.createElement("div");
-  div.className = "comment-content";
+        // Firebase Firestore me comment save
+        await db.collection("comments").add({
 
-  const nameElement = document.createElement("strong");
-  nameElement.textContent = name;
+          name: name,
 
-  const textElement = document.createElement("p");
-  textElement.textContent = text;
+          text: text,
 
-  const replyButton = document.createElement("button");
-  replyButton.textContent = "Reply";
-  replyButton.className = "reply-btn";
+          parentId: null,
 
-  const replyBox = document.createElement("div");
-  replyBox.className = "reply-box";
-  replyBox.style.display = "none";
+          createdAt:
+            firebase.firestore.FieldValue.serverTimestamp()
 
-  replyBox.innerHTML = `
-    <input type="text" placeholder="Your name" class="reply-name">
-    <textarea placeholder="Write a reply..." class="reply-text"></textarea>
-    <button class="post-reply">Post Reply</button>
-  `;
+        });
 
-  replyButton.addEventListener("click", () => {
-    replyBox.style.display =
-      replyBox.style.display === "none" ? "block" : "none";
-  });
+        // Form clear
+        commentForm.reset();
 
+        alert("Comment published successfully! ❤️");
 
-  const postReply = replyBox.querySelector(".post-reply");
+        // Comments dobara load
+        await loadComments();
 
-  postReply.addEventListener("click", async () => {
+      } catch (error) {
 
-    const replyName =
-      replyBox.querySelector(".reply-name").value.trim();
+        console.error("Comment save error:", error);
 
-    const replyText =
-      replyBox.querySelector(".reply-text").value.trim();
+        alert(
+          "Comment save nahi hua.\n\n" +
+          "Firebase Firestore Rules check karo."
+        );
 
-    if (!replyName || !replyText) {
-      alert("Please enter your name and reply.");
-      return;
-    }
+      } finally {
 
-    try {
+        if (publishButton) {
+          publishButton.disabled = false;
+          publishButton.textContent = "Publish";
+        }
 
-      await db.collection("comments").add({
-        name: replyName,
-        text: replyText,
-        parentId: id,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-
-      alert("Reply posted!");
-
-      replyBox.querySelector(".reply-name").value = "";
-      replyBox.querySelector(".reply-text").value = "";
-
-      loadComments();
-
-    } catch (error) {
-      console.error(error);
-      alert("Reply post nahi ho paya.");
-    }
-
-  });
-
-
-  div.appendChild(nameElement);
-  div.appendChild(textElement);
-  div.appendChild(replyButton);
-  div.appendChild(replyBox);
-
-  li.appendChild(div);
-
-  return li;
-}
-
-
-// Load replies
-async function loadReplies(parentId, parentElement) {
-
-  try {
-
-    const snapshot = await db
-      .collection("comments")
-      .where("parentId", "==", parentId)
-      .orderBy("createdAt", "asc")
-      .get();
-
-    snapshot.forEach(doc => {
-
-      const data = doc.data();
-
-      const reply = document.createElement("li");
-      reply.className = "comment-reply";
-
-      const name = document.createElement("strong");
-      name.textContent = data.name;
-
-      const text = document.createElement("p");
-      text.textContent = data.text;
-
-      reply.appendChild(name);
-      reply.appendChild(text);
-
-      parentElement.appendChild(reply);
+      }
 
     });
 
-  } catch (error) {
-    console.error("Reply load error:", error);
   }
-}
 
+  // ---------------------------------------------------------
+  // BUILD COMMENT
+  // ---------------------------------------------------------
+  function buildCommentEl(
+    name,
+    text,
+    timestamp,
+    commentId
+  ) {
 
-// Submit main comment
-if (commentForm) {
+    const li = document.createElement("li");
 
-  commentForm.addEventListener("submit", async function (e) {
+    li.className = "comment";
 
-    e.preventDefault();
+    li.dataset.commentId = commentId;
 
-    const name =
-      document.getElementById("commentName").value.trim();
+    // First letter
+    const initial =
+      name.trim().charAt(0).toUpperCase() || "A";
 
-    const text =
-      document.getElementById("commentText").value.trim();
+    // Date
+    let dateStr = "";
 
-    if (!name || !text) {
-      alert("Please enter your name and comment.");
+    if (
+      timestamp &&
+      typeof timestamp.toDate === "function"
+    ) {
+
+      const date = timestamp.toDate();
+
+      dateStr =
+        date.toLocaleDateString(
+          "en-GB",
+          {
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+          }
+        );
+
+      const timeStr =
+        date.toLocaleTimeString(
+          "en-GB",
+          {
+            hour: "2-digit",
+            minute: "2-digit"
+          }
+        );
+
+      dateStr += " at " + timeStr;
+
+    } else {
+
+      dateStr = "Just now";
+
+    }
+
+    // Comment HTML
+    li.innerHTML = `
+
+      <div
+        class="comment__avatar"
+        aria-hidden="true">
+        ${escapeHtml(initial)}
+      </div>
+
+      <div class="comment__body">
+
+        <p class="comment__meta">
+
+          <span class="comment__name">
+            ${escapeHtml(name)}
+          </span>
+
+          <span class="comment__date">
+            ${escapeHtml(dateStr)}
+          </span>
+
+        </p>
+
+        <p class="comment__text"></p>
+
+        <button
+          type="button"
+          class="reply-link">
+          Reply
+        </button>
+
+      </div>
+
+    `;
+
+    // User text safely insert
+    const textElement =
+      li.querySelector(".comment__text");
+
+    if (textElement) {
+      textElement.textContent = text;
+    }
+
+    // Reply button
+    const replyButton =
+      li.querySelector(".reply-link");
+
+    if (replyButton) {
+
+      replyButton.addEventListener(
+        "click",
+        () => {
+          toggleReplyBox(li);
+        }
+      );
+
+    }
+
+    return li;
+  }
+
+  // ---------------------------------------------------------
+  // REPLY BOX
+  // ---------------------------------------------------------
+  function toggleReplyBox(commentElement) {
+
+    const commentBody =
+      commentElement.querySelector(".comment__body");
+
+    if (!commentBody) {
       return;
     }
 
-    try {
+    // Agar already open hai to close
+    const oldBox =
+      commentBody.querySelector(".reply-box");
 
-      await db.collection("comments").add({
+    if (oldBox) {
 
-        name: name,
-        text: text,
-        parentId: null,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      oldBox.remove();
 
+      return;
+    }
+
+    // Dusre reply boxes close
+    document
+      .querySelectorAll(".reply-box")
+      .forEach((box) => {
+        box.remove();
       });
 
-      alert("Comment posted successfully!");
+    // Reply box
+    const box =
+      document.createElement("div");
 
-      document.getElementById("commentName").value = "";
-      document.getElementById("commentText").value = "";
+    box.className = "reply-box";
 
-      loadComments();
+    box.innerHTML = `
 
-    } catch (error) {
+      <textarea
+        placeholder="Write a reply..."
+        aria-label="Write a reply">
+      </textarea>
 
-      console.error("Comment error:", error);
+      <div class="reply-box__actions">
 
-      alert("Comment save nahi ho paya. Firebase settings check karein.");
+        <button
+          type="button"
+          class="reply-submit">
+          Reply
+        </button>
+
+        <button
+          type="button"
+          class="reply-cancel">
+          Cancel
+        </button>
+
+      </div>
+
+    `;
+
+    commentBody.appendChild(box);
+
+    const textarea =
+      box.querySelector("textarea");
+
+    if (textarea) {
+      textarea.focus();
+    }
+
+    // -------------------------------------------------------
+    // CANCEL REPLY
+    // -------------------------------------------------------
+    const cancelButton =
+      box.querySelector(".reply-cancel");
+
+    if (cancelButton) {
+
+      cancelButton.addEventListener(
+        "click",
+        () => {
+          box.remove();
+        }
+      );
 
     }
 
-  });
+    // -------------------------------------------------------
+    // SUBMIT REPLY
+    // -------------------------------------------------------
+    const replyButton =
+      box.querySelector(".reply-submit");
 
-}
+    if (replyButton) {
 
+      replyButton.addEventListener(
+        "click",
+        async () => {
 
-// Page load hote hi comments load
-loadComments();
+          const text =
+            textarea.value.trim();
+
+          if (!text) {
+
+            textarea.focus();
+
+            return;
+          }
+
+          const parentId =
+            commentElement.dataset.commentId;
+
+          replyButton.disabled = true;
+          replyButton.textContent = "Sending...";
+
+          try {
+
+            await db
+              .collection("comments")
+              .add({
+
+                name: "Anonymous",
+
+                text: text,
+
+                parentId: parentId,
+
+                createdAt:
+                  firebase.firestore.FieldValue
+                    .serverTimestamp()
+
+              });
+
+            box.remove();
+
+            alert("Reply published! ❤️");
+
+            // Replies/comments dobara load
+            await loadComments();
+
+          } catch (error) {
+
+            console.error(
+              "Reply save error:",
+              error
+            );
+
+            alert(
+              "Reply save nahi hua.\n\n" +
+              "Firebase Rules check karo."
+            );
+
+            replyButton.disabled = false;
+            replyButton.textContent = "Reply";
+
+          }
+
+        }
+      );
+
+    }
+
+  }
+
+  // ---------------------------------------------------------
+  // ESCAPE HTML
+  // ---------------------------------------------------------
+  function escapeHtml(str) {
+
+    const div =
+      document.createElement("div");
+
+    div.textContent = String(str);
+
+    return div.innerHTML;
+  }
+
+  // ---------------------------------------------------------
+  // SMOOTH SCROLL
+  // ---------------------------------------------------------
+  document
+    .querySelectorAll('a[href^="#"]')
+    .forEach((link) => {
+
+      link.addEventListener(
+        "click",
+        (e) => {
+
+          const targetId =
+            link.getAttribute("href");
+
+          if (!targetId || targetId === "#") {
+            return;
+          }
+
+          const target =
+            document.querySelector(targetId);
+
+          if (target) {
+
+            e.preventDefault();
+
+            target.scrollIntoView({
+              behavior: "smooth",
+              block: "start"
+            });
+
+          }
+
+        }
+      );
+
+    });
+
+  // ---------------------------------------------------------
+  // SHARE BUTTON
+  // ---------------------------------------------------------
+  const shareBtn =
+    document.getElementById("shareBtn");
+
+  const shareFeedback =
+    document.getElementById("shareFeedback");
+
+  if (shareBtn) {
+
+    shareBtn.addEventListener(
+      "click",
+      async () => {
+
+        const shareData = {
+
+          title:
+            document.title ||
+            "Toota Bharosa",
+
+          text:
+            "Jab Bharosa Tootta Hai — a journal on trust, pain and self-respect.",
+
+          url:
+            window.location.href
+
+        };
+
+        // ---------------------------------------------------
+        // MOBILE / SUPPORTED BROWSER SHARE
+        // ---------------------------------------------------
+        if (navigator.share) {
+
+          try {
+
+            await navigator.share(shareData);
+
+            // Successfully shared
+            return;
+
+          } catch (error) {
+
+            // User cancelled ya native share fail hua
+            console.log(
+              "Native share cancelled/failed."
+            );
+
+          }
+
+        }
+
+        // ---------------------------------------------------
+        // COPY LINK FALLBACK
+        // ---------------------------------------------------
+        try {
+
+          if (
+            navigator.clipboard &&
+            window.isSecureContext
+          ) {
+
+            await navigator.clipboard
+              .writeText(shareData.url);
+
+          } else {
+
+            // Old browser fallback
+            const tempInput =
+              document.createElement("input");
+
+            tempInput.value =
+              shareData.url;
+
+            document.body.appendChild(tempInput);
+
+            tempInput.select();
+
+            document.execCommand("copy");
+
+            tempInput.remove();
+
+          }
+
+          if (shareFeedback) {
+
+            shareFeedback.textContent =
+              "Link copied to clipboard. ❤️";
+
+            setTimeout(() => {
+
+              shareFeedback.textContent = "";
+
+            }, 3000);
+
+          }
+
+        } catch (error) {
+
+          console.error(
+            "Copy link failed:",
+            error
+          );
+
+          // Last fallback
+          window.prompt(
+            "Copy this link:",
+            shareData.url
+          );
+
+        }
+
+      }
+    );
+
+  }
+
+  // ---------------------------------------------------------
+  // LOAD EXISTING COMMENTS
+  // ---------------------------------------------------------
+  await loadComments();
+
+});
